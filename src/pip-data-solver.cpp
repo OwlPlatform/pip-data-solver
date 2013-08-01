@@ -152,7 +152,7 @@ int main(int ac, char** av) {
 				
 				vector<SolverWorldModel::AttrUpdate> solns;
 				auto tx_name = txerToUString(next.physical_layer, next.tx_id);
-				if (header & decode) {
+				if (not (header & decode)) {
 					size_t index = 1;
 					if (header & unknown) {
 						std::cerr<<"Header data from "<<std::string(tx_name.begin(), tx_name.end())<<" is unknown.\n";
