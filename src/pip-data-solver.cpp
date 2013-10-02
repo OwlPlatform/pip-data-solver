@@ -76,8 +76,9 @@ int main(int ac, char** av) {
 		std::cout<< "name: Pipsqueak Data Solver\n";
 		std::cout<< "arguments: aggregator agg_solver worldmodel wm_solver\n";
 		std::cout<< "description: Interprets pipsqueak data as transient types.\n";
-		std::cout<< "provides: temperature\n";
+		std::cout<< "provides: temperature.celsius\n";
 		std::cout<< "provides: binary state\n";
+		std::cout<< "provides: battery.millivolt\n";
 		return 0;
 	}
 
@@ -106,7 +107,7 @@ int main(int ac, char** av) {
 	//Link variance is between a transmitter and a receiver.
 	//Average variance is the average of all link variances for a transmitter
 	std::vector<std::pair<u16string, bool>> type_pairs{{u"temperature", true},
-		{u"binary state", true}};
+		{u"binary state", true}, {u"battery.millivolt", true}};
 	SolverWorldModel swm(wm_ip, wm_port, type_pairs, u16string(origin.begin(), origin.end()));
 	if (not swm.connected()) {
 		std::cerr<<"Could not connect to the world model - aborting.\n";
@@ -158,43 +159,54 @@ int main(int ac, char** av) {
 
 			//If there is any data then interpret it
 			if (0 < next.sense_data.size()) {
-				unsigned char header = next.sense_data[0];
+				BuffReader sense_data(next.sense_data);
+				unsigned char header = sense_data.readPrimitive<unsigned char>();
 				//There is only one header type right now, a 7bit temperature + 1
 				//binary bit.
 				//TODO Make this more generic, have these defined in
 				//the sample_data header.
 				const uint8_t decode = 0x80;
 				const uint8_t temp_binary = 0x01;
-				const uint8_t unknown = 0x7E;
+				const uint8_t battery_voltage = 0x08;
+				const uint8_t unknown = 0x76;
 				
 				vector<SolverWorldModel::AttrUpdate> solns;
 				auto tx_name = txerToUString(next.physical_layer, next.tx_id);
 				if (not (header & decode)) {
-					size_t index = 1;
 					if (header & unknown) {
 						std::cerr<<"Header data from "<<std::string(tx_name.begin(), tx_name.end())<<" is unknown.\n";
 					}
-					if (header & temp_binary and
-							index < next.sense_data.size()) {
+					if (header & temp_binary) {
 						SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						double temp = (next.sense_data.at(index) >> 1) - 40.0;
+						unsigned char temp_bin = sense_data.readPrimitive<unsigned char>();
+						double temp = (temp_bin >> 1) - 40.0;
 						std::cerr<<"Temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
 						pushBackVal(temp, temp_soln.data);
 
 						SolverWorldModel::AttrUpdate bin_soln{u"binary state", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						uint8_t bin = next.sense_data.at(index) & 0x01;
+						uint8_t bin = temp_bin & 0x01;
 						pushBackVal(bin, bin_soln.data);
 
 						solns.push_back(temp_soln);
 						solns.push_back(bin_soln);
-						//Next data is at the next index.
-						++index;
+					}
+					//Two byte battery voltage in millivolts
+					if (header & battery_voltage) {
+						SolverWorldModel::AttrUpdate volt_soln{u"battery.millivolt", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						uint16_t voltage = sense_data.readPrimitive<uint16_t>();
+						std::cerr<<"Battery millivoltage from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
+						pushBackVal(voltage, volt_soln.data);
+
+						solns.push_back(volt_soln);
 					}
 				}
-				//Do not create URIs for these entries, just send the data
-				if (not solns.empty()) {
-					//std::cerr<<"Updating "<<solns.size()<<" attributes.\n";
-					swm.sendData(solns, false);
+				//Check to make sure the data decoded properly before sending
+				if (not sense_data.outOfRange()) {
+					//Do not create URIs for these entries, just send the data
+					if (not solns.empty()) {
+						//std::cerr<<"Updating "<<solns.size()<<" attributes.\n";
+						swm.sendData(solns, false);
+					}
 				}
 			}
 		}
