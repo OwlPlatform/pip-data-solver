@@ -78,7 +78,7 @@ int main(int ac, char** av) {
 		std::cout<< "description: Interprets pipsqueak data as transient types.\n";
 		std::cout<< "provides: temperature.celsius\n";
 		std::cout<< "provides: binary state\n";
-		std::cout<< "provides: battery.millivolt\n";
+		std::cout<< "provides: battery.joule\n";
 		return 0;
 	}
 
@@ -107,7 +107,7 @@ int main(int ac, char** av) {
 	//Link variance is between a transmitter and a receiver.
 	//Average variance is the average of all link variances for a transmitter
 	std::vector<std::pair<u16string, bool>> type_pairs{{u"temperature", true},
-		{u"binary state", true}, {u"battery.millivolt", true}};
+		{u"binary state", true}, {u"battery.joule", false}};
 	SolverWorldModel swm(wm_ip, wm_port, type_pairs, u16string(origin.begin(), origin.end()));
 	if (not swm.connected()) {
 		std::cerr<<"Could not connect to the world model - aborting.\n";
@@ -190,11 +190,11 @@ int main(int ac, char** av) {
 						solns.push_back(temp_soln);
 						solns.push_back(bin_soln);
 					}
-					//Two byte battery voltage in millivolts
+					//Two byte battery voltage in joules
 					if (header & battery_voltage) {
-						SolverWorldModel::AttrUpdate volt_soln{u"battery.millivolt", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						SolverWorldModel::AttrUpdate volt_soln{u"battery.joule", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
 						uint16_t voltage = sense_data.readPrimitive<uint16_t>();
-						std::cerr<<"Battery millivoltage from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
+						std::cerr<<"Battery joules from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
 						pushBackVal(voltage, volt_soln.data);
 
 						solns.push_back(volt_soln);
