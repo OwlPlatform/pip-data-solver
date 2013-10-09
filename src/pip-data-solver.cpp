@@ -172,7 +172,7 @@ int main(int ac, char** av) {
 				const uint8_t temp16 = 0x02;
 				const uint8_t light_level = 0x04;
 				const uint8_t battery_voltage = 0x08;
-				const uint8_t unknown = 0x76;
+				const uint8_t unknown = 0x70;
 				
 				vector<SolverWorldModel::AttrUpdate> solns;
 				auto tx_name = txerToUString(next.physical_layer, next.tx_id);
@@ -191,7 +191,10 @@ int main(int ac, char** av) {
 						uint8_t bin = temp_bin & 0x01;
 						pushBackVal(bin, bin_soln.data);
 
-						solns.push_back(temp_soln);
+						//Only update the 7 bit temperature if the higher accuracy temperature is not being reported
+						if (not (header & temp16)) {
+							solns.push_back(temp_soln);
+						}
 						solns.push_back(bin_soln);
 					}
 					if (header & temp16) {
