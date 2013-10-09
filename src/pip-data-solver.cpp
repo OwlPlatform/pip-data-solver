@@ -107,7 +107,8 @@ int main(int ac, char** av) {
 	//Link variance is between a transmitter and a receiver.
 	//Average variance is the average of all link variances for a transmitter
 	std::vector<std::pair<u16string, bool>> type_pairs{{u"temperature", true},
-		{u"binary state", true}, {u"battery.millivolt", true}};
+		{u"binary state", true}, {u"temperature.16fi", true},
+		{u"light level", true}, {u"battery.millivolt", true}};
 	SolverWorldModel swm(wm_ip, wm_port, type_pairs, u16string(origin.begin(), origin.end()));
 	if (not swm.connected()) {
 		std::cerr<<"Could not connect to the world model - aborting.\n";
@@ -167,6 +168,9 @@ int main(int ac, char** av) {
 				//the sample_data header.
 				const uint8_t decode = 0x80;
 				const uint8_t temp_binary = 0x01;
+				//Fixed point, upper 12 are signed integer, lower four bits are 16th of a degree
+				const uint8_t temp16 = 0x02;
+				const uint8_t light_level = 0x04;
 				const uint8_t battery_voltage = 0x08;
 				const uint8_t unknown = 0x76;
 				
@@ -189,6 +193,22 @@ int main(int ac, char** av) {
 
 						solns.push_back(temp_soln);
 						solns.push_back(bin_soln);
+					}
+					if (header & temp16) {
+						SolverWorldModel::AttrUpdate temp_soln{u"temperature.16fi", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						int16_t temp16 = sense_data.readPrimitive<int16_t>();
+						//Truncate the lower four bits without losing the sign value by dividing, then add the fixed portion
+						double temp = (int)(temp16 / 16) + 0.0625 * (temp16 & 0xF) - 40.0;
+						std::cerr<<"16 bit fixed temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
+						pushBackVal(temp, temp_soln.data);
+						solns.push_back(temp_soln);
+					}
+					if (header & light_level) {
+						SolverWorldModel::AttrUpdate light_soln{u"light level", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						uint8_t light = sense_data.readPrimitive<uint8_t>();
+						std::cerr<<"Light level from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<(uint32_t)light<<'\n';
+						pushBackVal(light, light_soln.data);
+						solns.push_back(light_soln);
 					}
 					//Two byte battery voltage in millivolts
 					if (header & battery_voltage) {
