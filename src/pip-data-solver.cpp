@@ -79,6 +79,7 @@ int main(int ac, char** av) {
 		std::cout<< "provides: temperature.celsius\n";
 		std::cout<< "provides: binary state\n";
 		std::cout<< "provides: battery.joule\n";
+		std::cout<< "provides: light level\n";
 		return 0;
 	}
 
