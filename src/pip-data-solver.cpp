@@ -107,8 +107,7 @@ int main(int ac, char** av) {
 	//Link variance is between a transmitter and a receiver.
 	//Average variance is the average of all link variances for a transmitter
 	std::vector<std::pair<u16string, bool>> type_pairs{{u"temperature", true},
-		{u"binary state", true}, {u"temperature.16fi", true},
-		{u"light level", true}, {u"battery.joule", true}};
+		{u"binary state", true}, {u"light level", true}, {u"battery.joule", true}};
 	SolverWorldModel swm(wm_ip, wm_port, type_pairs, u16string(origin.begin(), origin.end()));
 	if (not swm.connected()) {
 		std::cerr<<"Could not connect to the world model - aborting.\n";
@@ -198,7 +197,7 @@ int main(int ac, char** av) {
 						solns.push_back(bin_soln);
 					}
 					if (header & temp16) {
-						SolverWorldModel::AttrUpdate temp_soln{u"temperature.16fi", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
 						int16_t temp16 = sense_data.readPrimitive<int16_t>();
 						//Truncate the lower four bits without losing the sign value by dividing, then add the fixed portion
 						double temp = (int)(temp16 / 16) + 0.0625 * (temp16 & 0xF) - 40.0;
