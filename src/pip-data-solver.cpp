@@ -78,7 +78,7 @@ int main(int ac, char** av) {
 		std::cout<< "description: Interprets pipsqueak data as transient types.\n";
 		std::cout<< "provides: temperature.celsius\n";
 		std::cout<< "provides: binary state\n";
-		std::cout<< "provides: battery.joules\n";
+		std::cout<< "provides: battery.joule\n";
 		return 0;
 	}
 
@@ -107,7 +107,8 @@ int main(int ac, char** av) {
 	//Link variance is between a transmitter and a receiver.
 	//Average variance is the average of all link variances for a transmitter
 	std::vector<std::pair<u16string, bool>> type_pairs{{u"temperature", true},
-		{u"binary state", true}, {u"battery.joules", true}};
+		{u"binary state", true}, {u"temperature.16fi", true},
+		{u"light level", true}, {u"battery.joule", true}};
 	SolverWorldModel swm(wm_ip, wm_port, type_pairs, u16string(origin.begin(), origin.end()));
 	if (not swm.connected()) {
 		std::cerr<<"Could not connect to the world model - aborting.\n";
@@ -167,8 +168,11 @@ int main(int ac, char** av) {
 				//the sample_data header.
 				const uint8_t decode = 0x80;
 				const uint8_t temp_binary = 0x01;
+				//Fixed point, upper 12 are signed integer, lower four bits are 16th of a degree
+				const uint8_t temp16 = 0x02;
+				const uint8_t light_level = 0x04;
 				const uint8_t battery_voltage = 0x08;
-				const uint8_t unknown = 0x76;
+				const uint8_t unknown = 0x70;
 				
 				vector<SolverWorldModel::AttrUpdate> solns;
 				auto tx_name = txerToUString(next.physical_layer, next.tx_id);
@@ -187,12 +191,31 @@ int main(int ac, char** av) {
 						uint8_t bin = temp_bin & 0x01;
 						pushBackVal(bin, bin_soln.data);
 
-						solns.push_back(temp_soln);
+						//Only update the 7 bit temperature if the higher accuracy temperature is not being reported
+						if (not (header & temp16)) {
+							solns.push_back(temp_soln);
+						}
 						solns.push_back(bin_soln);
 					}
-					//Two byte battery voltage in joules remaining 
+					if (header & temp16) {
+						SolverWorldModel::AttrUpdate temp_soln{u"temperature.16fi", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						int16_t temp16 = sense_data.readPrimitive<int16_t>();
+						//Truncate the lower four bits without losing the sign value by dividing, then add the fixed portion
+						double temp = (int)(temp16 / 16) + 0.0625 * (temp16 & 0xF) - 40.0;
+						std::cerr<<"16 bit fixed temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
+						pushBackVal(temp, temp_soln.data);
+						solns.push_back(temp_soln);
+					}
+					if (header & light_level) {
+						SolverWorldModel::AttrUpdate light_soln{u"light level", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						uint8_t light = sense_data.readPrimitive<uint8_t>();
+						std::cerr<<"Light level from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<(uint32_t)light<<'\n';
+						pushBackVal(light, light_soln.data);
+						solns.push_back(light_soln);
+					}
+					//Two byte battery voltage in joules
 					if (header & battery_voltage) {
-						SolverWorldModel::AttrUpdate volt_soln{u"battery.joules", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+						SolverWorldModel::AttrUpdate volt_soln{u"battery.joule", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
 						uint16_t voltage = sense_data.readPrimitive<uint16_t>();
 						std::cerr<<"Battery joules from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
 						pushBackVal(voltage, volt_soln.data);
