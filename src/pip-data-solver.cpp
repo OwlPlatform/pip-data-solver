@@ -101,7 +101,6 @@ int main(int ac, char** av) {
 	std::string wm_ip(av[ac-2]);
 	int wm_port = std::stoi(std::string((av[ac-1])));
 
-
 	//Set up the solver world model connection;
 	std::string origin = "pip-data-solver";
 	//Provide variance as a transient type
@@ -115,10 +114,7 @@ int main(int ac, char** av) {
 		return 0;
 	}
 
-	//A single producer, single consumer queue for incoming samples
-	//Need to provide a maximum size for the ringbuffer used in the
-	//queue, using 1000 (hopefully the aggregator does not get ahead
-	//of this solver).
+	//A queue for incoming samples
 	queue<SampleData> incoming_samples;
 	std::mutex sample_mutex;
 
