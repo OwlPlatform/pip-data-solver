@@ -32,6 +32,7 @@
 #include <vector>
 #include <queue>
 #include <mutex>
+#include <map>
 
 #include <signal.h>
 
@@ -69,6 +70,21 @@ void handler(int signal) {
 std::u16string txerToUString(unsigned int phy, TransmitterID& txid) {
 	std::string str = std::to_string(phy) + "." + std::to_string(txid.lower);
 	return u16string(str.begin(), str.end());
+}
+
+/**
+ * Updates the map of last datavalues for the new value and returns true if
+ * it did not change.
+ */
+bool updateCheck(std::map<u16string, vector<uint8_t>>& last_datavals,
+		const u16string& new_datatype, const vector<uint8_t>& new_dataval) {
+	if (last_datavals[new_datatype] == new_dataval) {
+		return true;
+	}
+	else {
+		last_datavals[new_datatype] = new_dataval;
+		return false;
+	}
 }
 
 int main(int ac, char** av) {
@@ -143,6 +159,9 @@ int main(int ac, char** av) {
 		}
 	};
 
+	//A latch to make sure that values must appear twice before being counted as correct
+	//Map is from: tx_name -> solution name -> vector of data bytes
+	std::map<std::u16string, std::map<std::u16string, vector<uint8_t>>> last_datavals;
 	//Keep processing samples until the program gets an interrupt signal
 	while (not interrupted) {
 		SampleData next;
@@ -177,53 +196,74 @@ int main(int ac, char** av) {
 						std::cerr<<"Header data from "<<std::string(tx_name.begin(), tx_name.end())<<" is unknown.\n";
 					}
 					if (header & temp_binary) {
-						SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						unsigned char temp_bin = sense_data.readPrimitive<unsigned char>();
-						double temp = (temp_bin >> 1) - 40.0;
-						std::cerr<<"Temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
-						pushBackVal(temp, temp_soln.data);
+						//Update data if this data reading seems stable
+						vector<uint8_t> data_buff(sizeof(unsigned char));
+						sense_data.readPrimitiveContainer(data_buff);
+						if (updateCheck(last_datavals[tx_name], u"temperature_binary_state", data_buff)) {
+							SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+							unsigned char temp_bin = readPrimitive<unsigned char>(data_buff);
 
-						SolverWorldModel::AttrUpdate bin_soln{u"binary state", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						uint8_t bin = temp_bin & 0x01;
-						pushBackVal(bin, bin_soln.data);
+							double temp = (temp_bin >> 1) - 40.0;
+							//std::cerr<<"Temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
+							pushBackVal(temp, temp_soln.data);
 
-						//Only update the 7 bit temperature if the higher accuracy temperature is not being reported
-						if (not (header & temp16)) {
-							solns.push_back(temp_soln);
+							SolverWorldModel::AttrUpdate bin_soln{u"binary state", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+							uint8_t bin = temp_bin & 0x01;
+							pushBackVal(bin, bin_soln.data);
+
+							//Only update the 7 bit temperature if the higher accuracy temperature is not being reported
+							if (not (header & temp16)) {
+								solns.push_back(temp_soln);
+							}
+							solns.push_back(bin_soln);
 						}
-						solns.push_back(bin_soln);
 					}
 					if (header & temp16) {
-						SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						int16_t temp16 = sense_data.readPrimitive<int16_t>();
-						//Truncate the lower four bits without losing the sign value by dividing, then add the fixed portion
-						double temp = (int)(temp16 / 16) + 0.0625 * (temp16 & 0xF) - 40.0;
-						std::cerr<<"16 bit fixed temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
-						pushBackVal(temp, temp_soln.data);
-						solns.push_back(temp_soln);
+						//Update data if this data reading seems stable
+						vector<uint8_t> data_buff(sizeof(int16_t));
+						sense_data.readPrimitiveContainer(data_buff);
+						if (updateCheck(last_datavals[tx_name], u"temperature", data_buff)) {
+							SolverWorldModel::AttrUpdate temp_soln{u"temperature", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+							int16_t temp16 = readPrimitive<int16_t>(data_buff);
+							//Truncate the lower four bits without losing the sign value by dividing, then add the fixed portion
+							double temp = (int)(temp16 / 16) + 0.0625 * (temp16 & 0xF) - 40.0;
+							//std::cerr<<"16 bit fixed temperature from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<temp<<'\n';
+							pushBackVal(temp, temp_soln.data);
+							solns.push_back(temp_soln);
+						}
 					}
 					if (header & light_level) {
-						SolverWorldModel::AttrUpdate light_soln{u"light level", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						uint8_t light = sense_data.readPrimitive<uint8_t>();
-						std::cerr<<"Light level from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<(uint32_t)light<<'\n';
-						pushBackVal(light, light_soln.data);
-						solns.push_back(light_soln);
+						//Update data if this data reading seems stable
+						vector<uint8_t> data_buff(sizeof(uint8_t));
+						sense_data.readPrimitiveContainer(data_buff);
+						if (updateCheck(last_datavals[tx_name], u"light level", data_buff)) {
+							SolverWorldModel::AttrUpdate light_soln{u"light level", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+							uint8_t light = readPrimitive<uint8_t>(data_buff);
+							//std::cerr<<"Light level from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<(uint32_t)light<<'\n';
+							pushBackVal(light, light_soln.data);
+							solns.push_back(light_soln);
+						}
 					}
 					//Two byte battery voltage in joules
 					if (header & battery_voltage) {
-						SolverWorldModel::AttrUpdate volt_soln{u"battery.joule", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
-						uint16_t voltage = sense_data.readPrimitive<uint16_t>();
-						std::cerr<<"Battery joules from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
-						pushBackVal(voltage, volt_soln.data);
+						//Update data if this data reading seems stable
+						vector<uint8_t> data_buff(sizeof(uint16_t));
+						sense_data.readPrimitiveContainer(data_buff);
+						if (updateCheck(last_datavals[tx_name], u"battery.joule", data_buff)) {
+							SolverWorldModel::AttrUpdate volt_soln{u"battery.joule", world_model::getGRAILTime(), tx_name, vector<uint8_t>()};
+							uint16_t voltage = readPrimitive<uint16_t>(data_buff);
+							//std::cerr<<"Battery joules from "<<std::string(tx_name.begin(), tx_name.end())<<" is "<<voltage<<'\n';
+							pushBackVal(voltage, volt_soln.data);
 
-						solns.push_back(volt_soln);
+							solns.push_back(volt_soln);
+						}
 					}
 				}
 				//Check to make sure the data decoded properly before sending
 				if (not sense_data.outOfRange()) {
 					//Do not create URIs for these entries, just send the data
 					if (not solns.empty()) {
-						//std::cerr<<"Updating "<<solns.size()<<" attributes.\n";
+						std::cerr<<"Updating "<<solns.size()<<" attributes.\n";
 						swm.sendData(solns, false);
 					}
 				}
